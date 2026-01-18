@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 import shutil
 
-MUSIC_ROOT = Path("/Users/sebastianydemadsen/MyMusic")
-SUPPORTED_EXTENSIONS = {".mp3", ".flac"}
+MUSIC_ROOT = Path("/Users/sebastianydemadsen/Downloads")
+SUPPORTED_EXTENSIONS = {".mp3", ".flac", ".m4a", ".wav"}
 IGNORE_DIRS = {".venv", "__pycache__", ".git"}
 
 
@@ -152,10 +152,66 @@ def remove_empty_folders(root: Path):
     return removed
 
 
+def convert_wav_to_flac():
+    """Find WAV files and offer to convert them to FLAC."""
+    wav_files = []
+    for dirpath, dirnames, filenames in os.walk(MUSIC_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
+        for f in filenames:
+            if f.lower().endswith('.wav'):
+                wav_files.append(Path(dirpath) / f)
+
+    if not wav_files:
+        return
+
+    print(f"\nFound {len(wav_files)} WAV file(s):")
+    for f in wav_files[:10]:
+        print(f"  • {f.relative_to(MUSIC_ROOT)}")
+    if len(wav_files) > 10:
+        print(f"  ... and {len(wav_files) - 10} more")
+
+    print("\nWAV files often lack metadata that macOS can read.")
+    print("Converting to FLAC is lossless and preserves full audio quality.")
+    response = input("Convert WAV files to FLAC? (yes/no): ").strip().lower()
+
+    if response != "yes":
+        print("Skipping WAV conversion.")
+        return
+
+    print("\nConverting...")
+    converted = 0
+    for wav_path in wav_files:
+        flac_path = wav_path.with_suffix('.flac')
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-i", str(wav_path), "-c:a", "flac", str(flac_path), "-y", "-loglevel", "error"],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0 and flac_path.exists():
+                wav_path.unlink()  # Remove original WAV
+                converted += 1
+                print(f"  ✓ {wav_path.name} → {flac_path.name}")
+            else:
+                print(f"  ✗ Failed: {wav_path.name}")
+                if result.stderr:
+                    print(f"    {result.stderr[:100]}")
+        except Exception as e:
+            print(f"  ✗ Error converting {wav_path.name}: {e}")
+
+    print(f"\n✓ Converted {converted}/{len(wav_files)} files to FLAC.")
+    if converted > 0:
+        print("\n⚠️  Note: The original WAV files likely had no metadata.")
+        print("   You may need to add metadata (artist, album, title) using")
+        print("   MusicBrainz Picard or similar before the organizer can sort them.")
+
+
 def main():
     print("=" * 50)
     print("MUSIC LIBRARY ORGANIZER")
     print("=" * 50)
+
+    # Check for WAV files first
+    convert_wav_to_flac()
 
     print("\n[1/3] Finding music files...")
     files = find_music_files()
